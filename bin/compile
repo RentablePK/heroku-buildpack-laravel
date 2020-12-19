@@ -71,6 +71,24 @@ else
 fi
 export COMPOSER_LOCK=$(basename "$COMPOSER" ".json")".lock" # replace .json with .lock if it exists, append .lock otherwise
 
+# all system packages live in there
+mkdir -p $build_dir/.heroku/php
+# set up Composer
+export COMPOSER_HOME=$cache_dir/.composer
+mkdir -p $COMPOSER_HOME
+# we need to run things in /app because of compiled paths, set that up!
+mkdir -p /app/.heroku
+ln -s $build_dir/.heroku/php /app/.heroku/php
+export PATH=/app/.heroku/php/bin:$PATH
+
+
+status "Bootstrapping..."
+
+# minimal PHP needed for installs, and make "composer" invocations use that for now
+mkdir -p $build_dir/.heroku/php-min
+ln -s $build_dir/.heroku/php-min
+curl --silent --location "$s3_url/php-min.tar.gz" | tar xz -C $build_dir/.heroku/php-min
+curl --silent --location "$s3_url/composer-1.0.0alpha11.tar.gz" | tar xz -C $build_dir/.heroku/php
 composer() {
     $build_dir/.heroku/php-min/bin/php $(which composer) "$@"
 }
@@ -90,24 +108,6 @@ Please change its contents to at least '{}' so it is valid JSON."
     fi
     echo "{}" > $COMPOSER
 fi
-
-# all system packages live in there
-mkdir -p $build_dir/.heroku/php
-# set up Composer
-export COMPOSER_HOME=$cache_dir/.composer
-mkdir -p $COMPOSER_HOME
-# we need to run things in /app because of compiled paths, set that up!
-mkdir -p /app/.heroku
-ln -s $build_dir/.heroku/php /app/.heroku/php
-export PATH=/app/.heroku/php/bin:$PATH
-
-status "Bootstrapping..."
-
-# minimal PHP needed for installs, and make "composer" invocations use that for now
-mkdir -p $build_dir/.heroku/php-min
-ln -s $build_dir/.heroku/php-min
-curl --silent --location "$s3_url/php-min.tar.gz" | tar xz -C $build_dir/.heroku/php-min
-curl --silent --location "$s3_url/composer-1.0.0alpha11.tar.gz" | tar xz -C $build_dir/.heroku/php
 
 status "Installing system packages..."
 
