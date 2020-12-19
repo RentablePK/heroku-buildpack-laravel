@@ -71,30 +71,14 @@ else
 fi
 export COMPOSER_LOCK=$(basename "$COMPOSER" ".json")".lock" # replace .json with .lock if it exists, append .lock otherwise
 
+composer() {
+    $build_dir/.heroku/php-min/bin/php $(which composer) "$@"
+}
+export -f composer
+
 # a bunch of sanity checks first
 if [[ -s "$COMPOSER" ]]; then
-    cat "$COMPOSER" | python -mjson.tool &> /dev/null || error "Could not parse '$COMPOSER'; make sure it's valid!"
-    if [[ ! -f "$COMPOSER_LOCK" ]]; then
-        cat "$COMPOSER" | python -c 'import sys, json; sys.exit(bool(json.load(sys.stdin).get("require", {})))' 2> /dev/null || error "Your '$COMPOSER' lists dependencies inside 'require',
-but no '$COMPOSER_LOCK' was found. Please run 'composer update' to
-re-generate '$COMPOSER_LOCK' if necessary, and commit it into your
-repository. For more information, please refer to the docs at
-https://devcenter.heroku.com/articles/php-support#activation"
-    else
-        cat "$COMPOSER_LOCK" | python -mjson.tool &> /dev/null || error "Could not parse '$COMPOSER_LOCK'; make sure it's valid!"
-        if [[ $(cat "$COMPOSER_LOCK" | python -c 'import sys, json; print json.load(sys.stdin)["hash"]' 2> /dev/null) != $(md5sum "$COMPOSER" | cut -d " " -f1) ]]; then
-            warning "Your '$COMPOSER_LOCK' is not up to date with the latest
-changes in '$COMPOSER'. To ensure you are not getting stale
-dependencies, run 'composer update' on your machine and commit
-any changes to Git before pushing again."
-        fi
-        cat "$COMPOSER_LOCK" | python -c 'import sys, json; l = json.load(sys.stdin); sys.exit(not(l["minimum-stability"] == "stable"));' 2> /dev/null || warning "Your '$COMPOSER' contains a non-'stable' setting
-for 'minimum-stability'. This may cause the installation of
-unstable versions of runtimes and extensions during this deploy.
-It is recommended that you always use stability flags instead,
-even if you have 'prefer-stable' enabled. For more information,
-see https://getcomposer.org/doc/01-basic-usage.md#stability"
-    fi
+    composer validate
 else
     if [[ ! -f "$COMPOSER" ]]; then
         warning "No '$COMPOSER' found.
@@ -124,10 +108,6 @@ mkdir -p $build_dir/.heroku/php-min
 ln -s $build_dir/.heroku/php-min
 curl --silent --location "$s3_url/php-min.tar.gz" | tar xz -C $build_dir/.heroku/php-min
 curl --silent --location "$s3_url/composer-1.0.0alpha11.tar.gz" | tar xz -C $build_dir/.heroku/php
-composer() {
-    $build_dir/.heroku/php-min/bin/php $(which composer) "$@"
-}
-export -f composer
 
 status "Installing system packages..."
 
@@ -279,7 +259,7 @@ export -f composer
 # handle extensions for PHP
 if [[ "$engine" == "php" ]]; then
     status "Enabling PHP extensions..."
-    
+
     exts=()
     if [[ -f "$COMPOSER_LOCK" ]]; then
         exts=($(cat "$COMPOSER_LOCK" | python -c 'import sys, json, itertools; l=json.load(sys.stdin); print "\n".join(list(set(itertools.chain([plat[4:].lower() for plat in l.get("platform", []) if plat.startswith("ext-")], *[ [ pkg[4:].lower() for pkg in p.get("require", []) if pkg.startswith("ext-") ] for p in l.get("packages", []) ]))))' 2> /dev/null || true)) # convert to array
@@ -288,7 +268,7 @@ if [[ "$engine" == "php" ]]; then
     for ext in "${!exts[@]}"; do # loop over keys in case the array is empty or else it'll error out
         install_ext "${exts[$ext]}" $ext_source
     done
-    
+
     if [[ ${#exts[@]} -eq 0 || ! ${exts[*]} =~ "zend-opcache" ]]; then
         install_ext "zend-opcache" "automatic"
         exts+=("zend-opcache")
